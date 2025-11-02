@@ -1182,7 +1182,9 @@ public isolated function countDocuments(
     string collection,
     map<json> filter = {}
 ) returns int|error {
-    string firestoreUrl = string `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runAggregationQuery`;
+    // Use runQuery to get documents and count them
+    // This is more reliable than runAggregationQuery which may not be fully supported
+    string firestoreUrl = string `https://firestore.googleapis.com/v1/projects/${projectId}/databases/(default)/documents:runQuery`;
     
     http:Client firestoreClient = check new(firestoreUrl);
     http:Request request = new;
@@ -1190,54 +1192,44 @@ public isolated function countDocuments(
     request.setHeader("Authorization", string `Bearer ${accessToken}`);
     request.setHeader("Content-Type", "application/json");
     
-    map<json> structuredAggregationQuery = {
-        "structuredQuery": {
-            "from": [{"collectionId": collection}]
-        },
-        "aggregations": [
-            {
-                "count": {},
-                "alias": "total_count"
-            }
-        ]
+    map<json> structuredQuery = {
+        "from": [{"collectionId": collection}],
+        // Select only one field to minimize data transfer
+        "select": {
+            "fields": [{"fieldPath": "__name__"}]
+        }
     };
     
     // Add where clause if filter is provided
     if filter.length() > 0 {
         json whereFilter = buildFirestoreFilter(filter);
-        map<json> structuredQuery = <map<json>>structuredAggregationQuery["structuredQuery"];
         structuredQuery["where"] = whereFilter;
     }
     
-    request.setJsonPayload(structuredAggregationQuery);
+    json queryPayload = {
+        "structuredQuery": structuredQuery
+    };
+    
+    request.setJsonPayload(queryPayload);
     
     http:Response response = check firestoreClient->post("", request);
     
     if response.statusCode == 200 {
         json responsePayload = check response.getJsonPayload();
         
-        if responsePayload is json[] && responsePayload.length() > 0 {
-            json firstResult = responsePayload[0];
-            if firstResult is map<json> && firstResult.hasKey("result") {
-                map<json> result = <map<json>>firstResult["result"];
-                if result.hasKey("aggregateFields") {
-                    map<json> aggregateFields = <map<json>>result["aggregateFields"];
-                    if aggregateFields.hasKey("total_count") {
-                        map<json> countValue = <map<json>>aggregateFields["total_count"];
-                        if countValue.hasKey("integerValue") {
-                            json integerValueJson = countValue["integerValue"];
-                            if integerValueJson is string {
-                                return check int:fromString(integerValueJson);
-                            } else if integerValueJson is int {
-                                return integerValueJson;
-                            }
-                        }
-                    }
+        // Count the number of documents in the response
+        int count = 0;
+        if responsePayload is json[] {
+            foreach json item in responsePayload {
+                if item is map<json> && item.hasKey("document") {
+                    count += 1;
                 }
             }
+        } else if responsePayload is map<json> && responsePayload.hasKey("document") {
+            count = 1;
         }
         
-        return 0; // Default to 0 if count not found
+        return count;
     } else {
         string errorBody = check response.getTextPayload();
         string errorMessage = string `Failed to count documents. Status code: ${response.statusCode} Error: ${errorBody}`;
@@ -1478,6 +1470,33 @@ public isolated function findDocuments(
     }
 }
 
+# Convert anydata to json safely
+#
+# + value - Anydata value to convert
+# + return - JSON value
+isolated function convertAnydataToJson(anydata value) returns json {
+    if value is json {
+        return value;
+    } else if value is anydata[] {
+        // Convert array of anydata to json array
+        json[] jsonArray = [];
+        foreach var item in value {
+            jsonArray.push(convertAnydataToJson(item));
+        }
+        return jsonArray;
+    } else if value is map<anydata> {
+        // Convert map of anydata to json map
+        map<json> jsonMap = {};
+        foreach var [key, val] in value.entries() {
+            jsonMap[key] = convertAnydataToJson(val);
+        }
+        return jsonMap;
+    } else {
+        // For other types, convert to string representation
+        return value.toString();
+    }
+}
+
 # Build advanced filter with multiple operators
 #
 # + filter - Filter conditions with advanced operators
@@ -1498,7 +1517,7 @@ isolated function buildAdvancedFilter(map<anydata> filter) returns json {
                     "fieldFilter": {
                         "field": {"fieldPath": key},
                         "op": getFirestoreOperator(operator),
-                        "value": processFirestoreValue(<json>operandValue)
+                        "value": processFirestoreValue(convertAnydataToJson(operandValue))
                     }
                 };
                 filters.push(fieldFilter);
@@ -1509,7 +1528,7 @@ isolated function buildAdvancedFilter(map<anydata> filter) returns json {
                 "fieldFilter": {
                     "field": {"fieldPath": key},
                     "op": "EQUAL",
-                    "value": processFirestoreValue(<json>value)
+                    "value": processFirestoreValue(convertAnydataToJson(value))
                 }
             };
             filters.push(fieldFilter);
