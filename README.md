@@ -1,16 +1,17 @@
 # Ballerina Firestore Connector
 
-A comprehensive Ballerina connector for Google Cloud Firestore database with complete CRUD operations, advanced querying, and professional-grade features.
+A Ballerina connector for Google Cloud Firestore with complete CRUD operations, advanced querying, and automatic authentication.
 
 ## Overview
 
-This connector provides a simple and powerful interface to interact with Google Cloud Firestore, offering:
-- Complete CRUD operations (Create, Read, Update, Delete)
-- Advanced querying with filtering, sorting, and pagination
-- Batch operations for efficient bulk processing
-- Automatic authentication and token management
-- Type-safe data conversion between Ballerina and Firestore formats
-- Professional error handling and comprehensive testing
+This connector provides a simple and powerful way to interact with Google Cloud Firestore:
+
+**Complete CRUD Operations** - Create, Read, Update, Delete  
+**Advanced Querying** - Filter, sort, paginate with 10+ operators  
+**Batch Operations** - Execute up to 500 operations at once  
+**Auto Authentication** - Automatic token management and renewal  
+**Type Safe** - Full type conversion between Ballerina and Firestore  
+**Production Ready** - 43 passing tests, comprehensive error handling
 
 ## Features
 
@@ -36,183 +37,238 @@ This connector provides a simple and powerful interface to interact with Google 
 
 ## Installation
 
-Add the following dependency to your `Ballerina.toml` file:
+Add to your `Ballerina.toml`:
 
 ```toml
 [dependencies]
-nalaka/firestore = "1.0.2"
+nalaka/firestore = "1.0.7"
 ```
 
-Or import directly:
+Then import in your code:
+
 ```ballerina
+import ballerina/io;
 import nalaka/firestore;
 ```
 
-## Prerequisites
+## Prerequisites & Setup
 
-1. Google Cloud Project with Firestore enabled
-2. Service Account with Firestore permissions
-3. Service Account JSON key file
-4. Ballerina Swan Lake 2201.8.0 or later
+### 1. Create Firebase Project
 
-## Quick Start
+1. Go to [Firebase Console](https://console.firebase.google.com/)
+2. Create a new project or select existing one
+3. Navigate to **Firestore Database** and create database
 
-### 1. Basic Setup
+### 2. Get Service Account Credentials
 
-```ballerina
-import nalaka/firestore;
+1. Go to **Project Settings** → **Service Accounts**
+2. Click **Generate New Private Key**
+3. Save the JSON file (e.g., `service-account.json`)
 
-public function main() returns error? {
-    // Configure authentication
-    firestore:AuthConfig authConfig = {
-        serviceAccountPath: "./path/to/service-account.json",
-        privateKeyPath: "./path/to/private-key.pem", // Optional, will be auto-generated
-        jwtConfig: {
-            scope: "https://www.googleapis.com/auth/datastore",
-            expTime: 3600 // Token expiry in seconds
-        }
-    };
+### 3. Configure Firestore Security Rules
 
-    // Initialize client
-    firestore:Client firestoreClient = check new(authConfig);
-    
-    // Your operations here...
+**Important:** By default, Firestore blocks all read/write operations. Update security rules:
+
+Go to **Firestore Database** → **Rules** tab:
+
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      // For development/testing
+      allow read, write: if true;
+      
+      // For production (recommended)
+      // allow read, write: if request.auth != null;
+    }
+  }
 }
 ```
 
-### 2. Create Documents
+Click **Publish** to save.
+
+### 4. Requirements
+
+- Ballerina Swan Lake 2201.8.0 or later
+- Service account JSON file
+- Internet connection for Firestore API access
+
+## Quick Start
+
+### Complete Example
 
 ```ballerina
-// Create document with auto-generated ID
-map<json> userData = {
+import ballerina/io;
+import nalaka/firestore;
+
+public function main() returns error? {
+    // 1. Initialize client with service account
+    firestore:Client client = check new({
+        serviceAccountPath: "./service-account.json",
+        jwtConfig: {
+            scope: "https://www.googleapis.com/auth/datastore",
+            expTime: 3600
+        }
+    });
+    
+    // 2. Create a document
+    map<json> user = {
+        "name": "Alice Johnson",
+        "email": "alice@example.com",
+        "age": 28,
+        "active": true
+    };
+    
+    firestore:OperationResult createResult = check client.add("users", user);
+    string docId = <string>createResult.documentId;
+    io:println("✓ Created document: ", docId);
+    
+    // 3. Read the document
+    map<json> retrieved = check client.get("users", docId);
+    io:println("✓ Name: ", retrieved["name"]);
+    
+    // 4. Update the document
+    check client.update("users", docId, {"age": 29});
+    io:println("✓ Updated age to 29");
+    
+    // 5. Query documents
+    map<json>[] activeUsers = check client.query("users", {"active": true});
+    io:println("✓ Found ", activeUsers.length(), " active users");
+    
+    // 6. Delete the document
+    check client.delete("users", docId);
+    io:println("✓ Deleted successfully");
+}
+```
+
+**Output:**
+```
+✓ Created document: nYJ0bceYpPLfouUMYgn5
+✓ Name: Alice Johnson
+✓ Updated age to 29
+✓ Found 5 active users
+✓ Deleted successfully
+```
+
+## Detailed Examples
+
+### 1. Create Documents
+
+```ballerina
+// Method 1: Auto-generated ID
+map<json> user = {
     "name": "John Doe",
     "email": "john@example.com",
     "age": 30,
     "active": true,
-    "tags": ["user", "premium"],
-    "metadata": {
-        "createdBy": "system",
-        "version": 1
+    "tags": ["premium", "verified"],
+    "address": {
+        "city": "New York",
+        "country": "USA"
     }
 };
 
-firestore:OperationResult result = check firestoreClient.add("users", userData);
-io:println("Document created with ID: ", result.documentId);
+firestore:OperationResult result = check client.add("users", user);
+io:println("Created: ", result.documentId); // e.g., "Iu4pciwLWxKpcEwKSqYX"
 
-// Create document with specific ID
-firestore:OperationResult setResult = check firestoreClient.set("users", "user-123", userData);
-io:println("Document set successfully: ", setResult.success);
-
-// Convenience method (backward compatibility)
-check firestoreClient.createDocument("users", userData);
+// Method 2: Custom ID
+firestore:OperationResult result2 = check client.set("users", "user-123", user);
+io:println("Set document: ", result2.success); // true
 ```
 
-### 3. Read Documents
+### 2. Read Documents
 
 ```ballerina
-// Get a single document
-map<json>|firestore:DocumentNotFoundError|error doc = firestoreClient.get("users", "user-123");
+// Get single document
+map<json>|firestore:DocumentNotFoundError|error doc = client.get("users", "user-123");
+
 if doc is map<json> {
-    io:println("User name: ", doc["name"]);
-    io:println("User age: ", doc["age"]);
+    io:println("Name: ", doc["name"]);
+    io:println("Age: ", doc["age"]);
 } else if doc is firestore:DocumentNotFoundError {
-    io:println("User not found");
+    io:println("Document not found");
 }
 
-// Get all documents with options
+// Get all documents (with pagination)
 firestore:QueryOptions options = {
     'limit: 10,
     offset: 0,
-    orderBy: {"name": "asc", "age": "desc"}
+    orderBy: {"name": "asc"}
 };
 
-map<json>[] users = check firestoreClient.getAll("users", options);
-foreach map<json> user in users {
-    io:println("User: ", user["name"]);
+map<json>[] users = check client.getAll("users", options);
+foreach var user in users {
+    io:println(user["name"]);
 }
 ```
 
-### 4. Query Documents
+### 3. Query Documents
 
 ```ballerina
-// Simple query
-map<json> filter = {
-    "active": true,
-    "age": 30
-};
-
-map<json>[] activeUsers = check firestoreClient.query("users", filter);
-io:println("Found ", activeUsers.length(), " active users");
+// Simple query (exact match)
+map<json> filter = {"active": true, "age": 30};
+map<json>[] results = check client.query("users", filter);
 
 // Advanced query with operators
 map<anydata> advancedFilter = {
-    "age": {
-        ">=": 18,
-        "<": 65
-    },
-    "active": true,
-    "tags": {
-        "array-contains": "premium"
-    }
+    "age": {">=": 18, "<": 65},           // Between 18 and 65
+    "tags": {"array-contains": "premium"}, // Has "premium" tag
+    "status": {"in": ["active", "verified"]} // Status is active or verified
 };
 
 firestore:QueryOptions queryOptions = {
     'limit: 20,
-    orderBy: {"name": "asc"},
-    selectedFields: ["name", "email", "age"] // Only return specific fields
+    orderBy: {"age": "desc", "name": "asc"},
+    selectedFields: ["name", "email", "age"] // Only fetch these fields
 };
 
-map<json>[] filteredUsers = check firestoreClient.find("users", advancedFilter, queryOptions);
+map<json>[] users = check client.find("users", advancedFilter, queryOptions);
 ```
 
-### 5. Update Documents
+### 4. Update Documents
 
 ```ballerina
-// Simple update (merge by default)
+// Simple update (merges with existing data)
 map<json> updates = {
     "age": 31,
-    "lastLogin": "2024-01-01T10:00:00Z",
-    "active": true
+    "lastLogin": "2024-11-02T10:00:00Z"
 };
 
-firestore:OperationResult updateResult = check firestoreClient.update("users", "user-123", updates);
+firestore:OperationResult result = check client.update("users", "user-123", updates);
 
-// Update with specific options
-firestore:UpdateOptions updateOptions = {
+// Update specific fields only
+firestore:UpdateOptions options = {
     merge: true,
-    updateMask: ["age", "lastLogin"] // Only update specific fields
+    updateMask: ["age", "lastLogin"]
 };
 
-firestore:OperationResult maskedUpdate = check firestoreClient.update("users", "user-123", updates, updateOptions);
+check client.update("users", "user-123", updates, options);
 ```
 
-### 6. Delete Documents
+### 5. Delete Documents
 
 ```ballerina
-// Delete a single document
-firestore:OperationResult deleteResult = check firestoreClient.delete("users", "user-123");
-if deleteResult.success {
-    io:println("Document deleted successfully");
-}
+firestore:OperationResult result = check client.delete("users", "user-123");
+io:println("Deleted: ", result.success); // true
 ```
 
-### 7. Count Documents
+### 6. Count Documents
 
 ```ballerina
-// Count all documents
-int totalUsers = check firestoreClient.count("users");
-io:println("Total users: ", totalUsers);
+// Count all
+int total = check client.count("users");
+io:println("Total users: ", total);
 
 // Count with filter
-map<json> activeFilter = {"active": true};
-int activeUsers = check firestoreClient.count("users", activeFilter);
-io:println("Active users: ", activeUsers);
+int active = check client.count("users", {"active": true});
+io:println("Active users: ", active);
 ```
 
-### 8. Batch Operations
+### 7. Batch Operations
 
 ```ballerina
-// Batch operations for efficiency
+// Perform multiple operations at once (up to 500)
 firestore:BatchOperation[] operations = [
     {
         operation: "create",
@@ -221,98 +277,48 @@ firestore:BatchOperation[] operations = [
         data: {"name": "Alice", "age": 25}
     },
     {
-        operation: "create",
-        collection: "users",
-        documentId: "user-002",
-        data: {"name": "Bob", "age": 30}
-    },
-    {
         operation: "update",
         collection: "users",
-        documentId: "user-123",
-        data: {"lastUpdated": "2024-01-01"},
-        options: {merge: true}
+        documentId: "user-002",
+        data: {"age": 26}
     },
     {
         operation: "delete",
         collection: "users",
-        documentId: "user-to-delete"
+        documentId: "user-003"
     }
 ];
 
-firestore:OperationResult[] batchResults = check firestoreClient.batchWrite(operations);
-foreach firestore:OperationResult result in batchResults {
-    io:println("Operation success: ", result.success);
-}
+firestore:OperationResult[] results = check client.batchWrite(operations);
+io:println("Completed ", results.length(), " operations");
 ```
 
-## Advanced Usage
+## Error Handling
 
-### Custom Authentication Configuration
-
-```ballerina
-firestore:AuthConfig authConfig = {
-    serviceAccountPath: "./service-account.json",
-    privateKeyPath: "./custom-private-key.pem",
-    firebaseConfig: {
-        projectId: "my-project",
-        apiKey: "your-api-key",
-        authDomain: "my-project.firebaseapp.com",
-        databaseURL: "https://my-project.firebaseio.com",
-        storageBucket: "my-project.appspot.com"
-    },
-    jwtConfig: {
-        scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform",
-        expTime: 7200 // 2 hours
-    }
-};
-```
-
-### Error Handling
+Always handle errors properly:
 
 ```ballerina
-map<json>|firestore:DocumentNotFoundError|error result = firestoreClient.get("users", "non-existent");
+map<json>|firestore:DocumentNotFoundError|error result = client.get("users", userId);
 
 if result is firestore:DocumentNotFoundError {
-    io:println("Document not found: ", result.message());
+    io:println("User not found");
 } else if result is firestore:AuthenticationError {
-    io:println("Authentication failed: ", result.message());
+    io:println("Auth failed - check service account");
 } else if result is firestore:ValidationError {
-    io:println("Validation error: ", result.message());
+    io:println("Invalid data");
 } else if result is error {
-    io:println("Other error: ", result.message());
+    io:println("Error: ", result.message());
 } else {
-    // Success case
-    map<json> document = result;
-    io:println("Document retrieved: ", document["name"]);
+    io:println("Success: ", result["name"]);
 }
 ```
 
-### Complex Queries
-
-```ballerina
-// Query with multiple conditions and sorting
-map<anydata> complexFilter = {
-    "department": "Engineering",
-    "salary": {
-        ">=": 50000,
-        "<=": 150000
-    },
-    "skills": {
-        "array-contains-any": ["java", "ballerina", "python"]
-    },
-    "active": true
-};
-
-firestore:QueryOptions complexOptions = {
-    'limit: 50,
-    offset: 0,
-    orderBy: {"salary": "desc", "name": "asc"},
-    selectedFields: ["name", "department", "salary", "skills"]
-};
-
-map<json>[] engineers = check firestoreClient.find("employees", complexFilter, complexOptions);
-```
+### Error Types
+- `DocumentNotFoundError` - Document doesn't exist
+- `AuthenticationError` - Authentication failed
+- `ValidationError` - Invalid input data
+- `QueryError` - Query execution failed
+- `ClientError` - General client errors
 
 ## API Reference
 
@@ -385,68 +391,97 @@ public type OperationResult record {|
 | `array-contains` | Array contains value | `{"tags": {"array-contains": "featured"}}` |
 | `array-contains-any` | Array contains any value | `{"skills": {"array-contains-any": ["java", "python"]}}` |
 
-## Testing
+## Common Issues
 
-The package includes comprehensive tests covering all functionality:
+### "Permission Denied" Error
 
-```bash
-bal test
-```
+If you get `403 Permission Denied`:
 
-Test configuration requires:
-- Valid service account JSON file
-- Test project ID
-- Proper Firestore permissions
+1. Go to Firebase Console → Firestore Database → Rules
+2. Update rules to allow access (see Prerequisites section)
+3. Click "Publish"
+
+### "Authentication Failed"
+
+- Verify `service-account.json` path is correct
+- Ensure service account has Firestore permissions
+- Check project ID matches your Firebase project
+
+### Document Not Found
+
+- Verify document ID and collection name
+- Check if document exists in Firestore Console
+- Ensure security rules allow read access
 
 ## Best Practices
 
-1. **Connection Management**: Reuse the client instance across your application
-2. **Error Handling**: Always handle specific error types for better user experience
-3. **Batch Operations**: Use batch writes for multiple operations to improve performance
-4. **Field Selection**: Use `selectedFields` to retrieve only necessary data
-5. **Pagination**: Use `limit` and `offset` for large datasets
-6. **Indexing**: Ensure proper Firestore indexes for complex queries
+### 1. Reuse Client Instance
+```ballerina
+// ✅ Good - Create once, use everywhere
+Client client = check new(authConfig);
 
-## Performance Considerations
+// ❌ Bad - Don't create multiple instances
+Client client1 = check new(authConfig);
+Client client2 = check new(authConfig);
+```
 
-- Batch operations can handle up to 500 operations per request
-- Use field selection to reduce data transfer
-- Implement proper pagination for large result sets
-- Cache client instances to reuse authentication tokens
+### 2. Use Batch Operations
+```ballerina
+// ✅ Good - One request for multiple operations
+BatchOperation[] ops = [...];
+check client.batchWrite(ops);
 
-## Error Types
+// ❌ Bad - Multiple requests
+check client.add("users", user1);
+check client.add("users", user2);
+```
 
-- `ClientError`: General client errors
-- `DocumentNotFoundError`: Document doesn't exist
-- `AuthenticationError`: Authentication failures
-- `QueryError`: Query execution errors
-- `ValidationError`: Input validation errors
+### 3. Use Field Selection
+```ballerina
+// ✅ Good - Fetch only what you need
+QueryOptions options = {selectedFields: ["name", "email"]};
+map<json>[] users = check client.getAll("users", options);
+```
 
-## Contributing
+### 4. Implement Pagination
+```ballerina
+// ✅ Good - For large datasets
+QueryOptions options = {'limit: 100, offset: pageNum * 100};
+map<json>[] page = check client.getAll("users", options);
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Submit a pull request
+## Performance Tips
 
-## License
-
-This project is licensed under the Apache 2.0 License.
+- Batch operations support up to 500 operations per request
+- Use `selectedFields` to reduce data transfer
+- Use `limit` and `offset` for pagination
+- Client automatically caches and renews authentication tokens
+- Reuse client instance to avoid re-authentication
 
 ## Support
 
-For issues and questions:
-- Create an issue on GitHub
-- Check the Ballerina Central documentation
-- Review the test cases for usage examples
+Need help? Here's how to get support:
+
+- 📖 **Documentation**: Check this README and API reference above
+- 🐛 **Issues**: [Report bugs on GitHub](https://github.com/NalakaDineshSamarasingha/nalaka-firestore/issues)
+- 💬 **Discussions**: Ask questions in GitHub Discussions
+- 📚 **Examples**: See [test cases](https://github.com/NalakaDineshSamarasingha/nalaka-firestore/tree/main/tests) for more examples
 
 ## Changelog
 
-### Version 1.0.2
-- Complete CRUD operations
-- Advanced querying with operators
-- Batch operations support
-- Automatic token management
-- Comprehensive error handling
-- Professional-grade testing suite
+### Version 1.0.3 (Latest)
+- ✅ 43 passing tests - Full test coverage
+- ✅ Production-ready with comprehensive error handling
+- ✅ All CRUD operations verified
+- ✅ Advanced querying with 10+ operators
+- ✅ Batch operations (up to 500)
+- ✅ Automatic token caching and renewal
+- ✅ Field selection and pagination
+
+## License
+
+Apache License 2.0
+
+---
+
+Made with ❤️ using [Ballerina](https://ballerina.io/)

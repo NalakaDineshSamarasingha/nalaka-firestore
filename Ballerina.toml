@@ -1,7 +1,7 @@
 [package]
 org = "nalaka"
 name = "firestore"
-version = "1.0.3"
+version = "1.0.7"
 distribution = "2201.8.0"
 
 [build-options]
