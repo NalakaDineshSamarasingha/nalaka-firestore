@@ -1076,7 +1076,7 @@ public isolated function getAllDocuments(
         foreach var [fieldName, direction] in orderBy.entries() {
             json orderClause = {
                 "field": {"fieldPath": fieldName},
-                "direction": direction.toUpperAscii()
+                "direction": getFirestoreDirection(direction)
             };
             orderByArray.push(orderClause);
         }
@@ -1429,7 +1429,7 @@ public isolated function findDocuments(
         foreach var [fieldName, direction] in orderBy.entries() {
             json orderClause = {
                 "field": {"fieldPath": fieldName},
-                "direction": direction.toUpperAscii()
+                "direction": getFirestoreDirection(direction)
             };
             orderByArray.push(orderClause);
         }
@@ -1545,6 +1545,19 @@ isolated function getFirestoreOperator(string operator) returns string {
         "in" => { return "IN"; }
         "not-in" => { return "NOT_IN"; }
         _ => { return "EQUAL"; }
+    }
+}
+
+# Convert direction string to Firestore format
+#
+# + direction - Direction string ("asc", "desc", "ascending", "descending")
+# + return - Firestore direction string ("ASCENDING" or "DESCENDING")
+isolated function getFirestoreDirection(string direction) returns string {
+    string lowerDirection = direction.toLowerAscii();
+    if lowerDirection == "asc" || lowerDirection == "ascending" {
+        return "ASCENDING";
+    } else {
+        return "DESCENDING";
     }
 }
 
