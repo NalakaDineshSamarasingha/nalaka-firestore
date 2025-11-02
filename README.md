@@ -104,7 +104,7 @@ import nalaka/firestore;
 
 public function main() returns error? {
     // 1. Initialize client with service account
-    firestore:Client client = check new({
+    firestore:Client firestoreClient = check new({
         serviceAccountPath: "./service-account.json",
         jwtConfig: {
             scope: "https://www.googleapis.com/auth/datastore",
@@ -120,24 +120,24 @@ public function main() returns error? {
         "active": true
     };
     
-    firestore:OperationResult createResult = check client.add("users", user);
+    firestore:OperationResult createResult = check firestoreClient.add("users", user);
     string docId = <string>createResult.documentId;
     io:println("✓ Created document: ", docId);
     
     // 3. Read the document
-    map<json> retrieved = check client.get("users", docId);
+    map<json> retrieved = check firestoreClient.get("users", docId);
     io:println("✓ Name: ", retrieved["name"]);
     
     // 4. Update the document
-    check client.update("users", docId, {"age": 29});
+    firestore:OperationResult updateResult = check firestoreClient.update("users", docId, {"age": 29});
     io:println("✓ Updated age to 29");
     
     // 5. Query documents
-    map<json>[] activeUsers = check client.query("users", {"active": true});
+    map<json>[] activeUsers = check firestoreClient.query("users", {"active": true});
     io:println("✓ Found ", activeUsers.length(), " active users");
     
     // 6. Delete the document
-    check client.delete("users", docId);
+    firestore:OperationResult deleteResult = check firestoreClient.delete("users", docId);
     io:println("✓ Deleted successfully");
 }
 ```
@@ -169,11 +169,11 @@ map<json> user = {
     }
 };
 
-firestore:OperationResult result = check client.add("users", user);
+firestore:OperationResult result = check firestoreClient.add("users", user);
 io:println("Created: ", result.documentId); // e.g., "Iu4pciwLWxKpcEwKSqYX"
 
 // Method 2: Custom ID
-firestore:OperationResult result2 = check client.set("users", "user-123", user);
+firestore:OperationResult result2 = check firestoreClient.set("users", "user-123", user);
 io:println("Set document: ", result2.success); // true
 ```
 
@@ -181,7 +181,7 @@ io:println("Set document: ", result2.success); // true
 
 ```ballerina
 // Get single document
-map<json>|firestore:DocumentNotFoundError|error doc = client.get("users", "user-123");
+map<json>|firestore:DocumentNotFoundError|error doc = firestoreClient.get("users", "user-123");
 
 if doc is map<json> {
     io:println("Name: ", doc["name"]);
@@ -197,7 +197,7 @@ firestore:QueryOptions options = {
     orderBy: {"name": "asc"}
 };
 
-map<json>[] users = check client.getAll("users", options);
+map<json>[] users = check firestoreClient.getAll("users", options);
 foreach var user in users {
     io:println(user["name"]);
 }
@@ -208,7 +208,7 @@ foreach var user in users {
 ```ballerina
 // Simple query (exact match)
 map<json> filter = {"active": true, "age": 30};
-map<json>[] results = check client.query("users", filter);
+map<json>[] results = check firestoreClient.query("users", filter);
 
 // Advanced query with operators
 map<anydata> advancedFilter = {
@@ -223,7 +223,7 @@ firestore:QueryOptions queryOptions = {
     selectedFields: ["name", "email", "age"] // Only fetch these fields
 };
 
-map<json>[] users = check client.find("users", advancedFilter, queryOptions);
+map<json>[] users = check firestoreClient.find("users", advancedFilter, queryOptions);
 ```
 
 ### 4. Update Documents
@@ -235,7 +235,7 @@ map<json> updates = {
     "lastLogin": "2024-11-02T10:00:00Z"
 };
 
-firestore:OperationResult result = check client.update("users", "user-123", updates);
+firestore:OperationResult result = check firestoreClient.update("users", "user-123", updates);
 
 // Update specific fields only
 firestore:UpdateOptions options = {
@@ -243,13 +243,13 @@ firestore:UpdateOptions options = {
     updateMask: ["age", "lastLogin"]
 };
 
-check client.update("users", "user-123", updates, options);
+firestore:OperationResult maskedResult = check firestoreClient.update("users", "user-123", updates, options);
 ```
 
 ### 5. Delete Documents
 
 ```ballerina
-firestore:OperationResult result = check client.delete("users", "user-123");
+firestore:OperationResult result = check firestoreClient.delete("users", "user-123");
 io:println("Deleted: ", result.success); // true
 ```
 
@@ -257,11 +257,11 @@ io:println("Deleted: ", result.success); // true
 
 ```ballerina
 // Count all
-int total = check client.count("users");
+int total = check firestoreClient.count("users");
 io:println("Total users: ", total);
 
 // Count with filter
-int active = check client.count("users", {"active": true});
+int active = check firestoreClient.count("users", {"active": true});
 io:println("Active users: ", active);
 ```
 
@@ -289,7 +289,7 @@ firestore:BatchOperation[] operations = [
     }
 ];
 
-firestore:OperationResult[] results = check client.batchWrite(operations);
+firestore:OperationResult[] results = check firestoreClient.batchWrite(operations);
 io:println("Completed ", results.length(), " operations");
 ```
 
@@ -298,7 +298,7 @@ io:println("Completed ", results.length(), " operations");
 Always handle errors properly:
 
 ```ballerina
-map<json>|firestore:DocumentNotFoundError|error result = client.get("users", userId);
+map<json>|firestore:DocumentNotFoundError|error result = firestoreClient.get("users", userId);
 
 if result is firestore:DocumentNotFoundError {
     io:println("User not found");
@@ -418,36 +418,36 @@ If you get `403 Permission Denied`:
 ### 1. Reuse Client Instance
 ```ballerina
 // ✅ Good - Create once, use everywhere
-Client client = check new(authConfig);
+firestore:Client firestoreClient = check new(authConfig);
 
 // ❌ Bad - Don't create multiple instances
-Client client1 = check new(authConfig);
-Client client2 = check new(authConfig);
+firestore:Client firestoreClient1 = check new(authConfig);
+firestore:Client firestoreClient2 = check new(authConfig);
 ```
 
 ### 2. Use Batch Operations
 ```ballerina
 // ✅ Good - One request for multiple operations
-BatchOperation[] ops = [...];
-check client.batchWrite(ops);
+firestore:BatchOperation[] ops = [...];
+firestore:OperationResult[] results = check firestoreClient.batchWrite(ops);
 
 // ❌ Bad - Multiple requests
-check client.add("users", user1);
-check client.add("users", user2);
+firestore:OperationResult r1 = check firestoreClient.add("users", user1);
+firestore:OperationResult r2 = check firestoreClient.add("users", user2);
 ```
 
 ### 3. Use Field Selection
 ```ballerina
 // ✅ Good - Fetch only what you need
-QueryOptions options = {selectedFields: ["name", "email"]};
-map<json>[] users = check client.getAll("users", options);
+firestore:QueryOptions options = {selectedFields: ["name", "email"]};
+map<json>[] users = check firestoreClient.getAll("users", options);
 ```
 
 ### 4. Implement Pagination
 ```ballerina
 // ✅ Good - For large datasets
-QueryOptions options = {'limit: 100, offset: pageNum * 100};
-map<json>[] page = check client.getAll("users", options);
+firestore:QueryOptions options = {'limit: 100, offset: pageNum * 100};
+map<json>[] page = check firestoreClient.getAll("users", options);
 ```
 
 ## Performance Tips

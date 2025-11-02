@@ -812,19 +812,8 @@ public isolated function getDocument(
                 document[key] = extractedValue;
             }
             
-            // Add document ID
+            // Only add document ID, not the metadata fields
             document["id"] = documentId;
-            
-            // Add metadata if available
-            if responsePayload.hasKey("name") {
-                document["name"] = responsePayload["name"];
-            }
-            if responsePayload.hasKey("createTime") {
-                document["createTime"] = responsePayload["createTime"];
-            }
-            if responsePayload.hasKey("updateTime") {
-                document["updateTime"] = responsePayload["updateTime"];
-            }
             
             return document;
         }
@@ -865,10 +854,17 @@ public isolated function updateDocument(
     string[] queryParams = [];
     
     if !options.merge {
+        // Replace entire document
         queryParams.push("updateMask.fieldPaths=*");
     } else if options.updateMask is string[] {
+        // Use explicit update mask
         string[] updateMask = <string[]>options.updateMask;
         foreach string fieldPath in updateMask {
+            queryParams.push("updateMask.fieldPaths=" + fieldPath);
+        }
+    } else {
+        // Default: merge mode - only update the fields provided in documentData
+        foreach string fieldPath in documentData.keys() {
             queryParams.push("updateMask.fieldPaths=" + fieldPath);
         }
     }
@@ -1583,18 +1579,11 @@ isolated function extractDocumentsFromResponse(json responsePayload) returns map
                     document[key] = extractedValue;
                 }
                 
-                // Add document metadata
+                // Add only document ID, not metadata
                 if documentWrapper.hasKey("name") {
                     string documentPath = <string>documentWrapper["name"];
                     string[] pathParts = regex:split(documentPath, "/");
                     document["id"] = pathParts[pathParts.length() - 1];
-                    document["name"] = documentPath;
-                }
-                if documentWrapper.hasKey("createTime") {
-                    document["createTime"] = documentWrapper["createTime"];
-                }
-                if documentWrapper.hasKey("updateTime") {
-                    document["updateTime"] = documentWrapper["updateTime"];
                 }
                 
                 results.push(document);
